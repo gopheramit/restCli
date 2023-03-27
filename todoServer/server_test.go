@@ -85,6 +85,16 @@ func TestGet(t *testing.T) {
 					http.StatusText(r.StatusCode))
 			}
 			switch {
+			case r.Header.Get("Content-Type") == "application/json":
+				if err = json.NewDecoder(r.Body).Decode(&resp); err != nil {
+					t.Error(err)
+				}
+				if resp.TotalResults != tc.expItems {
+					t.Errorf("Expected %d items ,got %d ", tc.expItems, resp.TotalResults)
+				}
+				if resp.Results[0].Task != tc.expContet {
+					t.Errorf("Expected %q,got%q", tc.expContet, resp.Results[0].Task)
+				}
 			case strings.Contains(r.Header.Get("Content-Type"), "text/plain"):
 				if body, err = ioutil.ReadAll(r.Body); err != nil {
 					t.Error(err)
@@ -100,4 +110,137 @@ func TestGet(t *testing.T) {
 		})
 	}
 
+}
+
+func TestADd(t *testing.T) {
+	url, cleanup := setupAPI(t)
+	defer cleanup()
+
+	taskName := "Task number 3."
+	t.Run("Add", func(t *testing.T) {
+		var body bytes.Buffer
+		item := struct {
+			Task string `json:"task"`
+		}{
+			Task: taskName,
+		}
+		if err := json.NewEncoder(&body).Encode(item); err != nil {
+			t.Fatal(err)
+
+		}
+		r, err := http.Post(url+"/todo", "application/json", &body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.StatusCode != http.StatusCreated {
+			t.Errorf("Expected %q,got%q", http.StatusText(http.StatusCreated), http.StatusText((r.StatusCode)))
+		}
+	})
+
+	t.Run("CheckAdd", func(t *testing.T) {
+		r, err := http.Get(url + "/todo/3")
+		if err != nil {
+			t.Error(err)
+		}
+		if r.StatusCode != http.StatusOK {
+			t.Errorf("Expected %q ,got %q", http.StatusText(http.StatusOK), http.StatusText(r.StatusCode))
+		}
+		var resp todoResponse
+		if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if resp.Result[0].Task != taskName {
+			t.Errorf("expected %q,got%q", taskName, resp.Result[0].Task)
+		}
+	})
+
+}
+
+func TestDele(t *testing.T) {
+	url, cleanup := setupAPI(t)
+	defer cleanup()
+
+	t.Run("Delete", func(t *testing.T) {
+		u := fmt.Sprintf("%s/todo/1", url)
+		req, err := http.NewRequest(http.MethodDelete, u, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Error(err)
+		}
+		if r.StatusCode != http.StatusNoContent {
+			t.Fatalf("Expected %q ,got %q", http.StatusText(http.StatusNoContent), http.StatusText(r.StatusCode))
+		}
+	})
+	t.Run("CheckDelete", func(t *testing.T) {
+		r, err := http.Get(url + "/todo")
+		if err != nil {
+			t.Error(err)
+		}
+		if r.StatusCode != http.StatusOK {
+			t.Fatalf("Expected %q ,got%q", http.StatusText(http.StatusOK), http.StatusText(r.StatusCode))
+		}
+		var resp todoResponse
+		if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if len(resp.Result) != 1 {
+			t.Errorf("Expected 1 item got %d", len(resp.Result))
+		}
+		expTask := "Task number 2."
+		if resp.Result[0].Task != expTask {
+			t.Errorf("Expected %q ,got %q", expTask, resp.Result[0].Task)
+		}
+
+	})
+}
+
+func TestComplete(t *testing.T) {
+	url, cleanup := setupAPI(t)
+	defer cleanup()
+	t.Run("complete", func(t *testing.T) {
+		u := fmt.Sprintf("%s/todo/1?complete", url)
+		req, err := http.NewRequest(http.MethodPatch, u, nil)
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Error(err)
+		}
+		if r.StatusCode != http.StatusNoContent {
+			t.Fatalf("Expected %q,got%q", http.StatusText(http.StatusNoContent), http.StatusText(r.StatusCode))
+		}
+	})
+
+	t.Run("CheckComplete", func(t *testing.T) {
+		r, err := http.Get(url + "/todo")
+		if err != nil {
+			t.Error(err)
+		}
+		if r.StatusCode != http.StatusOK {
+			t.Fatalf("Expected %q,got%q", http.StatusText(http.StatusOK), http.StatusText(r.StatusCode))
+		}
+		var resp todoResponse
+		if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if len(resp.Result) != 2 {
+			t.Errorf("Expected 2 items ,got %d", len(resp.Result))
+		}
+
+		if !resp.Result[0].Done {
+			t.Error("Expected Item 1 to be completed")
+
+		}
+		if resp.Result[1].Done {
+			t.Error("Expected Item 2 not to be completed")
+		}
+	})
 }
